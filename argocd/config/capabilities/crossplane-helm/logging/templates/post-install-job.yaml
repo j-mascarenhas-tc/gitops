@@ -1,0 +1,57 @@
+# Ensuring all CSVs in target namespace are ready
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-post-install-job
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    app.kubernetes.io/version: "{{ .Chart.AppVersion }}"
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+spec:
+  template:
+    metadata:
+      name: {{ .Release.Name }}-post-install-job
+      labels:
+        app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    spec:
+      containers:
+        - name: check-csv
+          image: quay.io/bitnami/kubectl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -x
+
+              current_seconds=0
+              limit_seconds=$(( $(date +%s) + 600 ))
+              installing=0
+
+              while [ ${current_seconds} -lt ${limit_seconds} ]; do
+                if [ $(kubectl get csv -n "{{.Values.metadata.namespace}}" -o name | grep -c clusterserviceversion) -eq 0 ] || \
+                   [ $(kubectl get csv -n "{{.Values.metadata.namespace}}" --no-headers | grep -vc Succeeded) -gt 0 ]; then
+                  installing=1
+                  echo "INFO: ClusterServiceVersion resources still installing."
+                  sleep 1
+                else
+                  installing=0
+                  break
+                fi
+                current_seconds=$(( $(date +%s) ))
+              done
+
+              if [ ${installing} -eq 0 ]; then
+                echo "INFO: All ClusterServiceVersion resources are ready."
+              else
+                echo "ERROR: ClusterServiceVersion resources still not ready."
+                exit 1
+              fi
+      restartPolicy: Never
+      serviceAccountName: argocd-application-controller
+  backoffLimit: 1

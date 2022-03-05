@@ -1,0 +1,10 @@
+---
+metadata:
+  name: my-logging-stack
+  namespace: dev
+spec:
+  parameters:
+    esVersion: 7.13.3
+    kibanaVersion: 7.13.3
+  providerConfigRef:
+    name: provider-config-dev
